@@ -1,0 +1,306 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+<title>My Video Feed</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+}
+
+#pickerScreen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+    text-align: center;
+    background: #111;
+    z-index: 10;
+}
+
+#pickerScreen h1 {
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+#pickerScreen p {
+    color: #bbb;
+    line-height: 1.6;
+}
+
+#chooseVideos {
+    margin-top: 20px;
+    padding: 15px 22px;
+    border: none;
+    border-radius: 30px;
+    background: #fff;
+    color: #000;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+#feed {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-snap-type: y mandatory;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    display: none;
+    scrollbar-width: none;
+}
+
+#feed::-webkit-scrollbar {
+    display: none;
+}
+
+.slide {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    background: #000;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.slide video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+.topBar {
+    position: fixed;
+    z-index: 5;
+    top: env(safe-area-inset-top, 10px);
+    left: 0;
+    right: 0;
+    padding: 14px 16px;
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    background: linear-gradient(#0008, transparent);
+}
+
+.topBar button {
+    pointer-events: auto;
+    border: 0;
+    border-radius: 20px;
+    padding: 9px 13px;
+    background: #ffffff30;
+    color: white;
+    font-size: 14px;
+}
+
+#counter {
+    font-size: 14px;
+    text-shadow: 0 1px 4px black;
+}
+
+.hint {
+    position: absolute;
+    bottom: calc(25px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: #fff9;
+    font-size: 13px;
+    pointer-events: none;
+}
+</style>
+</head>
+
+<body>
+
+<div id="pickerScreen">
+    <h1>My Video Feed</h1>
+    <p>
+        Turn your favourite videos into a personal,
+        swipe-up video feed, just like Instagram Reels.
+    </p>
+
+    <button id="chooseVideos">Choose Videos</button>
+
+    <p>Choose multiple videos from your iPhone.</p>
+
+    <input
+        id="fileInput"
+        type="file"
+        accept="video/*"
+        multiple
+        hidden
+    >
+</div>
+
+<div class="topBar" id="topBar">
+    <button id="changeVideos">＋ Videos</button>
+    <span id="counter">1 / 1</span>
+    <button id="restart">↻ Restart</button>
+</div>
+
+<div id="feed"></div>
+
+<script>
+const pickerScreen = document.getElementById("pickerScreen");
+const fileInput = document.getElementById("fileInput");
+const chooseVideos = document.getElementById("chooseVideos");
+const changeVideos = document.getElementById("changeVideos");
+const restart = document.getElementById("restart");
+const feed = document.getElementById("feed");
+const topBar = document.getElementById("topBar");
+const counter = document.getElementById("counter");
+
+let videos = [];
+let activeIndex = 0;
+let observer;
+
+chooseVideos.addEventListener("click", () => {
+    fileInput.click();
+});
+
+changeVideos.addEventListener("click", () => {
+    fileInput.click();
+});
+
+fileInput.addEventListener("change", () => {
+    const files = Array.from(fileInput.files || [])
+        .filter(file => file.type.startsWith("video/"));
+
+    if (!files.length) return;
+
+    // Release the previous selection.
+    videos.forEach(url => URL.revokeObjectURL(url));
+    videos = files.map(file => URL.createObjectURL(file));
+
+    buildFeed();
+
+    // Allow selecting the same files again later.
+    fileInput.value = "";
+});
+
+function buildFeed() {
+    if (observer) observer.disconnect();
+
+    feed.innerHTML = "";
+    activeIndex = 0;
+
+    videos.forEach((url, index) => {
+        const slide = document.createElement("section");
+        slide.className = "slide";
+        slide.dataset.index = index;
+
+        const video = document.createElement("video");
+        video.src = url;
+        video.playsInline = true;
+        video.muted = true;
+        video.loop = true;
+        video.preload = "metadata";
+
+        // Tap to pause or resume.
+        video.addEventListener("click", () => {
+            if (video.paused) {
+                video.play().catch(() => {});
+            } else {
+                video.pause();
+            }
+        });
+
+        slide.appendChild(video);
+
+        if (index === 0) {
+            const hint = document.createElement("div");
+            hint.className = "hint";
+            hint.textContent = "Swipe up for the next video";
+            slide.appendChild(hint);
+        }
+
+        feed.appendChild(slide);
+    });
+
+    pickerScreen.style.display = "none";
+    feed.style.display = "block";
+    topBar.style.display = "flex";
+
+    observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            const video = entry.target.querySelector("video");
+
+            if (entry.isIntersecting &&
+                entry.intersectionRatio >= 0.7) {
+                activeIndex = Number(entry.target.dataset.index);
+                counter.textContent =
+                    `${activeIndex + 1} / ${videos.length}`;
+
+                // Play only the visible video.
+                document.querySelectorAll("#feed video")
+                    .forEach(other => {
+                        if (other !== video) other.pause();
+                    });
+
+                video.play().catch(() => {
+                    // Tap the video if autoplay is blocked.
+                });
+            } else {
+                video.pause();
+            }
+        });
+    }, {
+        root: feed,
+        threshold: [0, 0.7, 1]
+    });
+
+    document.querySelectorAll(".slide").forEach(slide => {
+        observer.observe(slide);
+    });
+
+    // Start at the first video.
+    feed.scrollTop = 0;
+}
+
+restart.addEventListener("click", () => {
+    if (!videos.length) return;
+
+    feed.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
+});
+
+// Pause videos when Safari is sent to the background.
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        document.querySelectorAll("#feed video")
+            .forEach(video => video.pause());
+    }
+});
+</script>
+
+</body>
+</html>
